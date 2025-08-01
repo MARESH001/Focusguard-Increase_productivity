@@ -38,7 +38,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173", 
         "http://127.0.0.1:5173",
-        "https://your-app-name.netlify.app",  # Replace with your Netlify domain
+        "https://focusguard.netlify.app",  # Replace with your Netlify domain
         "https://*.netlify.app"  # Allow all Netlify subdomains
     ],
     allow_credentials=True,
