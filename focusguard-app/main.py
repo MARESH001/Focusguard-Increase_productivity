@@ -5,7 +5,6 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import motor.motor_asyncio
 from bson import ObjectId
-import spacy
 from textblob import TextBlob
 import re
 import json
