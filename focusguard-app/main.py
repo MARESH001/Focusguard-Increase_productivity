@@ -23,12 +23,6 @@ load_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 
 # Load spaCy model
-try:
-    nlp = spacy.load("en_core_web_sm")
-    print("✅ Spacy model loaded")
-except OSError:
-    print("⚠️ Spacy model not found. Run: python -m spacy download en_core_web_sm")
-    nlp = None
 
 app = FastAPI(title="FocusGuard API", version="1.0.0")
 
