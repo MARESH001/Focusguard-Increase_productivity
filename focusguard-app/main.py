@@ -26,14 +26,15 @@ MONGODB_URL = os.getenv("MONGODB_URL")
 app = FastAPI(title="FocusGuard API", version="1.0.0")
 
 # CORS middleware
+origins = [
+    "https://thefocusguard.netlify.app",  # ✅ Your frontend URL
+    "http://localhost:5173",              # ✅ For local testing
+    "http://127.0.0.1:5173"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173", 
-        "http://127.0.0.1:5173",
-        "https://thefocusguard.netlify.app",  # Replace with your Netlify domain
-        "https://*.netlify.app"  # Allow all Netlify subdomains
-    ],
+    allow_origins=origins,         # ✅ DO NOT use "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
