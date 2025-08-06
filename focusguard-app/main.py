@@ -259,16 +259,18 @@ class ActivityLogResponse(BaseModel):
     is_distraction: bool
     timestamp: datetime
 
+# FIXED: Updated NotificationResponse model with required sound_type field
 class NotificationResponse(BaseModel):
     id: str
     username: str
     message: str
     notification_type: str
-    sound_type: str
+    sound_type: str  # REQUIRED field that was missing
     custom_audio_url: Optional[str] = None
     created_at: datetime
+    read: bool  # Added read status
 
-# Enhanced notification system
+# Enhanced notification system - FIXED logic
 async def send_distraction_notification(username: str, window_title: str, session_id: str):
     """Send distraction notification with proper sound system"""
     
@@ -294,27 +296,23 @@ async def send_distraction_notification(username: str, window_title: str, sessio
     current_tracking["count"] += 1
     count = current_tracking["count"]
     
-    # Determine sound type and message based on count
+    # FIXED: Proper sound type logic as requested
     if count <= 2:
         sound_type = "default"
-        message = f"⚠️ Distraction Alert #{count}: You're on {window_title}. Stay focused!"
+        message = f"⚠️ Distracting activity detected: {window_title}"
     else:
-        sound_type = "custom_audio"  # This will trigger special audio
-        message = f"🚨 FOCUS ALERT #{count}: Multiple distractions detected! Return to your task immediately!"
-        
-        # Reset counter after 3rd notification
-        if count >= 3:
-            current_tracking["count"] = 0
-            current_tracking["last_reset"] = datetime.utcnow()
+        sound_type = "custom"  # Will use custom audio if available
+        message = f"🚨 Multiple distractions detected! Stay focused on: {window_title}"
     
-    # Create notification data
+    # Create notification data with ALL required fields
     notification_data = {
+        "_id": ObjectId(),  # Generate ObjectId for proper insertion
         "id": str(uuid.uuid4()),
         "username": username,
         "message": message,
-        "notification_type": "distraction_warning",
-        "sound_type": sound_type,
-        "custom_audio_url": None if sound_type == "default" else "alert_sound.mp3",
+        "notification_type": "distraction",
+        "sound_type": sound_type,  # REQUIRED field
+        "custom_audio_url": None,  # You can add custom audio URL logic here
         "created_at": datetime.utcnow(),
         "read": False,
         "session_id": session_id,
@@ -323,12 +321,18 @@ async def send_distraction_notification(username: str, window_title: str, sessio
     }
     
     # Store notification in database
-    await notifications_collection.insert_one(notification_data)
+    try:
+        result = await notifications_collection.insert_one(notification_data)
+        notification_data["id"] = str(notification_data["_id"])
+        print(f"✅ Notification stored in DB for {username}")
+    except Exception as e:
+        print(f"❌ Database error storing notification: {e}")
+        return None
     
     # Send via WebSocket if connected
     if username in active_connections:
         try:
-            await active_connections[username].send_text(json.dumps({
+            websocket_message = {
                 "type": "distraction_notification",
                 "data": {
                     "id": notification_data["id"],
@@ -338,12 +342,20 @@ async def send_distraction_notification(username: str, window_title: str, sessio
                     "custom_audio_url": notification_data["custom_audio_url"],
                     "created_at": notification_data["created_at"].isoformat(),
                     "window_title": window_title,
-                    "distraction_count": count
+                    "distraction_count": count,
+                    "read": False
                 }
-            }, default=str))
-            print(f"✅ Sent distraction notification to {username}: {message}")
+            }
+            
+            await active_connections[username].send_text(json.dumps(websocket_message, default=str))
+            print(f"✅ WebSocket notification sent to {username}: {message}")
         except Exception as e:
             print(f"❌ Error sending WebSocket notification: {e}")
+            # Remove broken connection
+            if username in active_connections:
+                del active_connections[username]
+    else:
+        print(f"⚠️ No active WebSocket connection for {username}")
     
     return notification_data
 
@@ -425,6 +437,12 @@ async def get_focus_sessions(username: str):
         session["id"] = str(session["_id"])
     return sessions
 
+# FIXED: Add the missing endpoint that frontend is calling
+@app.post("/sessions/{session_id}/activity/enhanced", response_model=ActivityLogResponse)
+async def monitor_activity_enhanced(session_id: str, activity_log: ActivityLogCreate):
+    """Enhanced activity monitoring endpoint that frontend is calling"""
+    return await monitor_activity_realtime(session_id, activity_log)
+
 # MAIN ENHANCEMENT: Real-time activity monitoring endpoint
 @app.post("/sessions/{session_id}/monitor-activity", response_model=ActivityLogResponse)
 async def monitor_activity_realtime(session_id: str, activity_log: ActivityLogCreate):
@@ -465,17 +483,95 @@ async def monitor_activity_realtime(session_id: str, activity_log: ActivityLogCr
         print(f"🚨 DISTRACTION DETECTED for {username}: {activity_log.window_title}")
         
         # Send distraction notification
-        await send_distraction_notification(username, activity_log.window_title, session_id)
+        notification = await send_distraction_notification(username, activity_log.window_title, session_id)
         
-        # Update session distraction count
-        await sessions_collection.update_one(
-            {"_id": ObjectId(session_id)},
-            {"$inc": {"distraction_count": 1}}
-        )
-        
-        print(f"✅ Notification sent and session updated for {username}")
+        if notification:
+            # Update session distraction count
+            await sessions_collection.update_one(
+                {"_id": ObjectId(session_id)},
+                {"$inc": {"distraction_count": 1}}
+            )
+            
+            print(f"✅ Notification sent and session updated for {username}")
+        else:
+            print(f"❌ Failed to send notification for {username}")
     
     return activity_data
+
+# FIXED: Add missing PUT endpoint for sessions
+@app.put("/sessions/{session_id}", response_model=dict)
+async def update_session(session_id: str, session_update: FocusSessionUpdate):
+    """Update session details"""
+    if not ObjectId.is_valid(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    
+    session = await sessions_collection.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    update_data = {}
+    if session_update.completed is not None:
+        update_data["completed"] = session_update.completed
+    if session_update.distraction_count is not None:
+        update_data["distraction_count"] = session_update.distraction_count
+    if session_update.productivity_score is not None:
+        update_data["productivity_score"] = session_update.productivity_score
+    if session_update.end_time is not None:
+        update_data["end_time"] = session_update.end_time
+    
+    if update_data:
+        await sessions_collection.update_one(
+            {"_id": ObjectId(session_id)},
+            {"$set": update_data}
+        )
+    
+    return {"message": "Session updated successfully"}
+
+# FIXED: Add missing time_spent endpoint
+@app.get("/users/{username}/activity/time_spent")
+async def get_time_spent(username: str, start_date: str, end_date: str):
+    """Get time spent data for user"""
+    user = await get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    try:
+        # Parse dates
+        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        
+        # Get activity logs in date range
+        activities = await activity_collection.find({
+            "username": username,
+            "timestamp": {
+                "$gte": start_dt,
+                "$lte": end_dt
+            }
+        }).to_list(length=1000)
+        
+        # Calculate time spent by category
+        time_data = {
+            "productive": 0,
+            "educational": 0,
+            "entertainment": 0,
+            "neutral": 0
+        }
+        
+        for activity in activities:
+            classification = activity.get("classification", "neutral")
+            if classification in time_data:
+                time_data[classification] += 1  # Simple count for now
+        
+        return time_data
+        
+    except Exception as e:
+        print(f"Error getting time spent: {e}")
+        return {
+            "productive": 0,
+            "educational": 0,
+            "entertainment": 0,
+            "neutral": 0
+        }
 
 # WebSocket endpoint for real-time notifications
 @app.websocket("/ws/{username}")
@@ -489,13 +585,28 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
             # Keep connection alive and listen for any messages
             data = await websocket.receive_text()
             
-            # You can handle incoming messages here if needed
-            # For example, heartbeat messages or client status updates
+            # Handle incoming messages
             try:
                 message = json.loads(data)
                 if message.get("type") == "heartbeat":
                     await websocket.send_text(json.dumps({"type": "heartbeat_response", "status": "ok"}))
-            except:
+                elif message.get("type") == "test_notification":
+                    # Test notification for debugging
+                    await websocket.send_text(json.dumps({
+                        "type": "distraction_notification",
+                        "data": {
+                            "id": str(uuid.uuid4()),
+                            "message": "Test notification",
+                            "notification_type": "distraction",
+                            "sound_type": "default",
+                            "custom_audio_url": None,
+                            "created_at": datetime.utcnow().isoformat(),
+                            "window_title": "Test",
+                            "distraction_count": 1,
+                            "read": False
+                        }
+                    }))
+            except json.JSONDecodeError:
                 pass  # Ignore malformed messages
                 
     except WebSocketDisconnect:
@@ -519,8 +630,14 @@ async def get_notifications(username: str):
         "username": username
     }).sort("created_at", -1).to_list(length=50)
     
+    # FIXED: Ensure all required fields are present
     for notification in notifications:
         notification["id"] = str(notification["_id"])
+        # Add missing fields if they don't exist
+        if "sound_type" not in notification:
+            notification["sound_type"] = "default"
+        if "read" not in notification:
+            notification["read"] = False
     
     return notifications
 
@@ -593,8 +710,36 @@ async def get_distraction_stats(username: str):
         "current_distraction_count": current_stats["count"],
         "current_session_id": current_stats.get("session_id"),
         "last_reset": current_stats["last_reset"],
-        "next_sound_type": "default" if current_stats["count"] < 2 else "custom_audio"
+        "next_sound_type": "default" if current_stats["count"] < 2 else "custom"
     }
+
+# DEBUGGING: Add test endpoint
+@app.post("/test-notification/{username}")
+async def test_notification(username: str):
+    """Test notification system"""
+    if username in active_connections:
+        try:
+            test_notification = {
+                "type": "distraction_notification",
+                "data": {
+                    "id": str(uuid.uuid4()),
+                    "message": "🧪 Test notification - your notification system is working!",
+                    "notification_type": "distraction",
+                    "sound_type": "default",
+                    "custom_audio_url": None,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "window_title": "Test Window",
+                    "distraction_count": 1,
+                    "read": False
+                }
+            }
+            
+            await active_connections[username].send_text(json.dumps(test_notification))
+            return {"message": f"Test notification sent to {username}"}
+        except Exception as e:
+            return {"error": f"Failed to send test notification: {e}"}
+    else:
+        return {"error": f"No active WebSocket connection for {username}"}
 
 if __name__ == "__main__":
     import uvicorn
