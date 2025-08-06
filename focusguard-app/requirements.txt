@@ -9,5 +9,9 @@ python-dotenv==1.0.0
 textblob==0.17.1
 websockets==12.0
 apscheduler==3.10.4
+# Use precompiled spaCy wheel to avoid compilation issues
+https://files.pythonhosted.org/packages/40/ab/cc47a9244e5c52c6c2e6bb9b33fe4c4b812d15cfe3ad9ad02dc3eede6a49/spacy-3.7.2-cp311-cp311-linux_x86_64.whl
+# Use precompiled blis wheel to avoid compilation errors
+https://files.pythonhosted.org/packages/f6/d3/0d05c8d3c0c58bc5e8ce5c8a4b7edbce42e1e50825b8c6e80b4e9b6a85b/blis-0.7.11-cp311-cp311-linux_x86_64.whl
+# Download spaCy model directly
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
-spacy[apple,lookups,transformers] @ https://files.pythonhosted.org/packages/ee/85/0b7b2a6057e12df825e4eb84bbb5d5bfa67a4c542c5e3db8cefe785b1ebe/spacy-3.7.2-cp311-cp311-linux_x86_64.whl
