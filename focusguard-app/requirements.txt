@@ -6,8 +6,8 @@ python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-dotenv==1.0.0
-blis==0.7.9
-spacy==3.7.2
+blis==0.7.11
+spacy==3.7.4
 textblob==0.17.1
 websockets==12.0
 apscheduler==3.10.4
