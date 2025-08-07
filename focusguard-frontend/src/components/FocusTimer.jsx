@@ -91,6 +91,17 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
     };
   }, [isRunning, isPaused, timeLeft]);
 
+  useEffect(() => {
+    const savedSession = localStorage.getItem('focusguard_current_session');
+    if (savedSession && !currentSession) {
+      const sessionObj = JSON.parse(savedSession);
+      setCurrentSession(sessionObj);
+      setIsSetup(true);
+      setIsRunning(true);
+      // Optionally restore timeLeft, distractionCount, etc. if you store them
+    }
+  }, []);
+
   const requestNotificationPermission = async () => {
     if ('Notification' in window) {
       const permission = await Notification.requestPermission();
@@ -131,7 +142,8 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
         setIsSetup(true);
         setIsRunning(true);
         setDistractionCount(0);
-        
+        // Store session in localStorage for resuming
+        localStorage.setItem('focusguard_current_session', JSON.stringify(session));
         // Start monitoring (in a real app, this would communicate with a background service)
         startMonitoring(session.id);
       }
@@ -175,6 +187,8 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
 
     }, 5000); // Send activity every 5 seconds
   };
+
+  // NOTE: Ensure your monitoring logic always calls handleDistraction(currentSession.id) for every distraction event, not just the first one.
 
   const stopMonitoring = () => {
     if (activityLogIntervalRef.current) {
@@ -272,9 +286,19 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
   };
 
   const handleStop = async () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (activityLogIntervalRef.current) {
+      clearInterval(activityLogIntervalRef.current);
+      activityLogIntervalRef.current = null;
+    }
     if (currentSession) {
       await updateSession(false);
     }
+    // Optionally remove session from localStorage if you store it
+    localStorage.removeItem('focusguard_current_session');
     resetTimer();
   };
 
@@ -627,4 +651,3 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
 };
 
 export default FocusTimer;
-
