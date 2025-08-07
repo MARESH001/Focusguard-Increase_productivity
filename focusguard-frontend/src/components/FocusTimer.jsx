@@ -268,17 +268,20 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
     oscillator.stop(audioContext.currentTime + 0.5);
   };
 
-  const sendDesktopNotification = (title, message) => {
-    if (notificationPermission === 'granted') {
-      new Notification(title, {
-        body: message,
-        icon: '/favicon.ico',
-        badge: '/favicon.ico',
-        tag: 'focusguard-notification',
-        requireInteraction: false,
-        silent: false
-      });
+  const sendDesktopNotification = async (title, message) => {
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
     }
+    new Notification(title, {
+      body: message,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: 'focusguard-notification',
+      requireInteraction: false,
+      silent: false
+    });
   };
 
   const handlePause = () => {
