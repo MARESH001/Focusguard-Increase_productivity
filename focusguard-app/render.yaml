@@ -15,7 +15,10 @@ services:
         curl \
         wget \
         rustc \
-        cargo
+        cargo \
+        xdotool \
+        wmctrl \
+        x11-utils
       
       # Upgrade pip and build tools
       pip install --upgrade pip setuptools wheel build

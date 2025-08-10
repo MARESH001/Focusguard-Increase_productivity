@@ -16,21 +16,14 @@ import uuid
 import os
 from dotenv import load_dotenv
 import shutil
+import platform
+import subprocess
+import psutil
+import win32gui
+import win32process
+import win32api
+import win32con
 import time
-import threading
-
-# Windows-specific imports for monitoring
-try:
-    import win32gui
-    import win32process
-    import win32api
-    import win32con
-    import psutil
-    WINDOWS_MONITORING_AVAILABLE = True
-    print("✅ Windows monitoring libraries imported successfully")
-except ImportError as e:
-    print(f"⚠️ Windows monitoring libraries not available: {e}")
-    WINDOWS_MONITORING_AVAILABLE = False
 
 # Advanced BERT-based Content Classification
 try:
@@ -44,6 +37,36 @@ try:
 except ImportError as e:
     print(f"⚠️ BERT libraries not available: {e}")
     BERT_AVAILABLE = False
+
+# Cross-platform window monitoring imports
+try:
+    import platform
+    import subprocess
+    import psutil
+    
+    # Windows-specific imports
+    if platform.system() == "Windows":
+        import win32gui
+        import win32process
+        import win32api
+        import win32con
+        WINDOWS_AVAILABLE = True
+    else:
+        WINDOWS_AVAILABLE = False
+    
+    # Linux-specific imports
+    if platform.system() == "Linux":
+        import os
+        import re
+        LINUX_AVAILABLE = True
+    else:
+        LINUX_AVAILABLE = False
+        
+    WINDOW_MONITORING_AVAILABLE = True
+    print("✅ Cross-platform window monitoring available")
+except ImportError as e:
+    print(f"⚠️ Window monitoring not available: {e}")
+    WINDOW_MONITORING_AVAILABLE = False
 
 # Load environment variables
 load_dotenv()
@@ -113,231 +136,6 @@ scheduler = AsyncIOScheduler()
 user_distraction_tracking: Dict[str, Dict[str, Any]] = {}
 # Structure: {username: {"count": int, "session_id": str, "last_reset": datetime, "last_distraction_active": bool, "last_distracting_window": str, "notification_sent_at": datetime, "repeated_notification_count": int, "last_notification_time": datetime}}
 
-# Global monitoring state
-monitoring_active = False
-monitoring_thread = None
-current_monitoring_user = None
-current_monitoring_session = None
-
-class IntegratedWindowMonitor:
-    """Integrated window monitoring service that runs alongside the FastAPI server"""
-    
-    def __init__(self, app_instance):
-        self.app = app_instance
-        self.is_monitoring = False
-        self.last_window_title = ""
-        self.last_check_time = 0
-        self.check_interval = 2  # Check every 2 seconds
-        self.last_distracting_window = None
-        self.last_distraction_time = None
-        self.distraction_repeat_interval = 2
-        self.current_user = None
-        self.current_session_id = None
-        
-    def get_active_window_title(self):
-        """Get the title of the currently active window"""
-        if not WINDOWS_MONITORING_AVAILABLE:
-            return "Monitoring not available on this platform"
-            
-        try:
-            # Get the handle of the foreground window
-            hwnd = win32gui.GetForegroundWindow()
-            if hwnd:
-                # Get the window title
-                title = win32gui.GetWindowText(hwnd)
-                
-                # Get the process name
-                try:
-                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                    process = psutil.Process(pid)
-                    process_name = process.name()
-                    
-                    # Combine process name and window title for better classification
-                    if title:
-                        full_title = f"{process_name} - {title}"
-                    else:
-                        full_title = process_name
-                        
-                    return full_title
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    return title if title else "Unknown Window"
-            else:
-                return "No Active Window"
-        except Exception as e:
-            print(f"Error getting window title: {e}")
-            return "Error Getting Window"
-    
-    def should_send_activity(self, current_title, current_time):
-        """Determine if we should send activity data based on smart rules"""
-        
-        # Always send if window has changed
-        if current_title != self.last_window_title:
-            return True, "Window changed"
-        
-        # If we're on a distraction, send data every 2 seconds for repeated notifications
-        if (self.last_distracting_window and 
-            current_title == self.last_distracting_window):
-            return True, "Sending data for repeated distraction notification"
-        
-        return False, "No change needed"
-    
-    async def log_activity_internal(self, window_title):
-        """Log window activity using internal API calls"""
-        if not self.current_session_id:
-            print("❌ No active monitoring session")
-            return False
-            
-        try:
-            # Create activity log data
-            activity_data = {
-                "window_title": window_title
-            }
-            
-            # Use the existing enhanced endpoint
-            from fastapi.testclient import TestClient
-            client = TestClient(self.app)
-            
-            response = client.post(
-                f"/sessions/{self.current_session_id}/activity/enhanced",
-                json=activity_data
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                classification = result.get("classification", "unknown")
-                is_distraction = result.get("is_distraction", False)
-                confidence = result.get("confidence", 0.0)
-                sentiment = result.get("sentiment", "unknown")
-                sentiment_score = result.get("sentiment_score", 0.0)
-                reasoning = result.get("reasoning", "No reasoning provided")
-                
-                status_icon = "⚠️" if is_distraction else "✅"
-                status_text = "DISTRACTION" if is_distraction else "PRODUCTIVE"
-                
-                print(f"{status_icon} {status_text}: {window_title}")
-                print(f"   🎯 Classification: {classification} (confidence: {confidence:.2f})")
-                print(f"   😊 Sentiment: {sentiment} (score: {sentiment_score:.2f})")
-                print(f"   💭 Reasoning: {reasoning}")
-                
-                # Track activity and handle notifications
-                if is_distraction:
-                    self.last_distracting_window = window_title
-                    self.last_distraction_time = time.time()
-                    print(f"   📱 Distraction logged - notification sent!")
-                else:
-                    # Reset distraction tracking when productive
-                    if self.last_distracting_window:
-                        print(f"   🎯 Productive content detected - logging activity")
-                        self.last_distracting_window = None
-                        self.last_distraction_time = None
-                
-                return True
-            else:
-                print(f"❌ Failed to log activity: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Error logging activity: {e}")
-            return False
-    
-    async def start_monitoring(self, username: str, duration_minutes: int = 30):
-        """Start monitoring windows for a specific user"""
-        if not WINDOWS_MONITORING_AVAILABLE:
-            print("❌ Windows monitoring not available on this platform")
-            return False
-            
-        print(f"🚀 Starting integrated window monitoring for {duration_minutes} minutes...")
-        print(f"📊 Monitoring user: {username}")
-        print(f"⏰ Check interval: {self.check_interval} seconds")
-        print(f"🔄 Distraction repeat interval: {self.distraction_repeat_interval} seconds")
-        print("=" * 60)
-        print("📱 NOTIFICATIONS: Will log activity AND send notifications for distractions")
-        print("=" * 60)
-        
-        # Create or get user
-        try:
-            # Create user if doesn't exist
-            user_data = {"username": username}
-            from fastapi.testclient import TestClient
-            client = TestClient(self.app)
-            
-            response = client.post("/users/", json=user_data)
-            if response.status_code not in [200, 201]:
-                print(f"❌ Failed to create user: {response.status_code}")
-                return False
-            
-            # Create session
-            session_data = {
-                "task_description": "Integrated window monitoring session", 
-                "keywords": ["monitoring"], 
-                "duration_minutes": duration_minutes
-            }
-            
-            response = client.post(f"/users/{username}/sessions/", json=session_data)
-            if response.status_code == 200:
-                session_info = response.json()
-                self.current_session_id = session_info["id"]
-                self.current_user = username
-                print(f"✅ Session created: {self.current_session_id}")
-            else:
-                print(f"❌ Failed to create session: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Error creating session: {e}")
-            return False
-        
-        self.is_monitoring = True
-        start_time = time.time()
-        end_time = start_time + (duration_minutes * 60)
-        
-        print("🔍 Monitoring active windows... (Press Ctrl+C to stop)")
-        print("=" * 60)
-        
-        while self.is_monitoring and time.time() < end_time:
-            try:
-                # Get current window info
-                current_title = self.get_active_window_title()
-                current_time = time.time()
-                
-                # Check if we should send activity data
-                should_send, reason = self.should_send_activity(current_title, current_time)
-                
-                if should_send:
-                    print(f"\n🔄 Window: {current_title}")
-                    print(f"   Time: {datetime.now().strftime('%H:%M:%S')}")
-                    print(f"   Reason: {reason}")
-                    
-                    # Log the activity (this triggers notifications)
-                    await self.log_activity_internal(current_title)
-                    
-                    # Update tracking
-                    self.last_window_title = current_title
-                    self.last_check_time = current_time
-                else:
-                    # Show current status without logging
-                    if current_title != self.last_window_title:
-                        print(f"\n👁️  Window: {current_title} (monitoring, no change)")
-                        self.last_window_title = current_title
-                
-                # Wait before next check
-                await asyncio.sleep(self.check_interval)
-                
-            except Exception as e:
-                print(f"❌ Error during monitoring: {e}")
-                await asyncio.sleep(self.check_interval)
-        
-        print("⏹️  Monitoring completed")
-        return True
-    
-    def stop_monitoring(self):
-        """Stop the monitoring process"""
-        self.is_monitoring = False
-        print("⏹️  Monitoring stopped")
-
-# Global monitor instance (will be initialized after app creation)
-window_monitor = None
-
 # Notification throttling settings
 NOTIFICATION_THROTTLE_SECONDS = 2  # Allow notifications every 2 seconds
 REPEATED_NOTIFICATION_INTERVAL = 2  # Allow repeated notifications every 2 seconds for same window
@@ -346,11 +144,6 @@ REPEATED_NOTIFICATION_INTERVAL = 2  # Allow repeated notifications every 2 secon
 async def startup_event():
     """Initialize scheduler on startup"""
     try:
-        # Initialize the window monitor
-        global window_monitor
-        window_monitor = IntegratedWindowMonitor(app)
-        print("✅ Window monitor initialized")
-        
         # Start the scheduler
         scheduler.start()
         print("✅ Scheduler started successfully")
@@ -890,6 +683,215 @@ except Exception as e:
     print(f"⚠️ Failed to initialize BERT classifier: {e}")
     print("🔄 Falling back to basic keyword classifier")
     classifier = AdvancedContentClassifier()  # This will trigger fallback mode
+
+# Cross-platform Window Monitoring System
+class CrossPlatformWindowMonitor:
+    """Cross-platform window monitoring system that works on both Windows and Linux"""
+    
+    def __init__(self):
+        self.system = platform.system()
+        self.last_window_title = ""
+        self.last_check_time = 0
+        self.check_interval = 2
+        
+    def get_active_window_title(self):
+        """Get the title of the currently active window - works on Windows and Linux"""
+        try:
+            if self.system == "Windows" and WINDOWS_AVAILABLE:
+                return self._get_windows_active_window()
+            elif self.system == "Linux" and LINUX_AVAILABLE:
+                return self._get_linux_active_window()
+            else:
+                return self._get_fallback_window_info()
+        except Exception as e:
+            print(f"Error getting active window: {e}")
+            return "Unknown Window"
+    
+    def _get_windows_active_window(self):
+        """Get active window on Windows"""
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            if hwnd:
+                title = win32gui.GetWindowText(hwnd)
+                try:
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    process = psutil.Process(pid)
+                    process_name = process.name()
+                    return f"{process_name} - {title}" if title else process_name
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    return title if title else "Unknown Window"
+            return "No Active Window"
+        except Exception as e:
+            print(f"Windows window detection error: {e}")
+            return "Windows Error"
+    
+    def _get_linux_active_window(self):
+        """Get active window on Linux using xdotool or wmctrl"""
+        try:
+            # Try xdotool first (more reliable)
+            try:
+                result = subprocess.run(
+                    ['xdotool', 'getactivewindow', 'getwindowname'],
+                    capture_output=True, text=True, timeout=2
+                )
+                if result.returncode == 0:
+                    window_title = result.stdout.strip()
+                    if window_title:
+                        # Get process name
+                        try:
+                            result_pid = subprocess.run(
+                                ['xdotool', 'getactivewindow', 'getwindowpid'],
+                                capture_output=True, text=True, timeout=2
+                            )
+                            if result_pid.returncode == 0:
+                                pid = result_pid.stdout.strip()
+                                if pid.isdigit():
+                                    process = psutil.Process(int(pid))
+                                    process_name = process.name()
+                                    return f"{process_name} - {window_title}"
+                        except:
+                            pass
+                        return window_title
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+            
+            # Fallback to wmctrl
+            try:
+                result = subprocess.run(
+                    ['wmctrl', '-a', ':ACTIVE:', '-v'],
+                    capture_output=True, text=True, timeout=2
+                )
+                if result.returncode == 0:
+                    # Parse wmctrl output
+                    lines = result.stdout.strip().split('\n')
+                    for line in lines:
+                        if 'Window title:' in line:
+                            window_title = line.split('Window title:')[1].strip()
+                            return window_title
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+            
+            # Final fallback - try to get from environment
+            display = os.environ.get('DISPLAY')
+            if display:
+                return f"Linux Desktop - {display}"
+            else:
+                return "Linux System"
+                
+        except Exception as e:
+            print(f"Linux window detection error: {e}")
+            return "Linux Error"
+    
+    def _get_fallback_window_info(self):
+        """Fallback window info when platform-specific methods fail"""
+        try:
+            # Get basic system info
+            system_info = {
+                "system": self.system,
+                "hostname": platform.node(),
+                "username": os.environ.get('USER', os.environ.get('USERNAME', 'Unknown')),
+                "display": os.environ.get('DISPLAY', 'No Display'),
+                "terminal": os.environ.get('TERM', 'Unknown')
+            }
+            
+            # Try to get current working directory as context
+            try:
+                cwd = os.getcwd()
+                system_info["working_directory"] = cwd
+            except:
+                system_info["working_directory"] = "Unknown"
+            
+            # Create a meaningful window title from system info
+            if self.system == "Linux":
+                return f"Linux Terminal - {system_info['username']}@{system_info['hostname']}"
+            elif self.system == "Windows":
+                return f"Windows System - {system_info['username']}"
+            else:
+                return f"{self.system} System - {system_info['username']}"
+                
+        except Exception as e:
+            print(f"Fallback window info error: {e}")
+            return f"{self.system} System"
+    
+    def get_window_info(self):
+        """Get detailed information about the active window"""
+        try:
+            title = self.get_active_window_title()
+            
+            # Get process info if possible
+            process_info = {
+                "name": "Unknown",
+                "exe": "Unknown",
+                "cmdline": [],
+                "title": title,
+                "full_title": title
+            }
+            
+            try:
+                if self.system == "Windows" and WINDOWS_AVAILABLE:
+                    hwnd = win32gui.GetForegroundWindow()
+                    if hwnd:
+                        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                        process = psutil.Process(pid)
+                        process_info.update({
+                            "name": process.name(),
+                            "exe": process.exe(),
+                            "cmdline": process.cmdline()
+                        })
+                elif self.system == "Linux" and LINUX_AVAILABLE:
+                    # Try to get process info on Linux
+                    try:
+                        result = subprocess.run(
+                            ['xdotool', 'getactivewindow', 'getwindowpid'],
+                            capture_output=True, text=True, timeout=2
+                        )
+                        if result.returncode == 0 and result.stdout.strip().isdigit():
+                            pid = int(result.stdout.strip())
+                            process = psutil.Process(pid)
+                            process_info.update({
+                                "name": process.name(),
+                                "exe": process.exe(),
+                                "cmdline": process.cmdline()
+                            })
+                    except:
+                        pass
+            except:
+                pass
+            
+            return process_info
+            
+        except Exception as e:
+            print(f"Error getting window info: {e}")
+            return {
+                "name": "Error",
+                "exe": "Error",
+                "cmdline": [],
+                "title": "Error Getting Window",
+                "full_title": "Error Getting Window"
+            }
+    
+    def should_send_activity(self, current_title, current_time):
+        """Determine if we should send activity data based on smart rules"""
+        
+        # Always send if window has changed
+        if current_title != self.last_window_title:
+            return True, "Window changed"
+        
+        # If we're on a distraction, send data every 2 seconds for repeated notifications
+        if (hasattr(self, 'last_distracting_window') and 
+            self.last_distracting_window and 
+            current_title == self.last_distracting_window):
+            return True, "Sending data for repeated distraction notification"
+        
+        return False, "No change needed"
+
+# Initialize the cross-platform window monitor
+try:
+    window_monitor = CrossPlatformWindowMonitor()
+    print(f"✅ Cross-platform window monitor initialized for {window_monitor.system}")
+except Exception as e:
+    print(f"⚠️ Failed to initialize window monitor: {e}")
+    window_monitor = None
 
 # Pydantic models
 class UserCreate(BaseModel):
@@ -2537,143 +2539,235 @@ async def submit_feedback(username: str, feedback: FeedbackCreate):
         print(f"❌ Error submitting feedback: {e}")
         raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
-# ============================================================================
-# INTEGRATED MONITORING CONTROL ENDPOINTS
-# ============================================================================
-
-@app.post("/monitoring/start/{username}")
-async def start_monitoring(username: str, duration_minutes: int = 30):
-    """Start integrated window monitoring for a user"""
-    global window_monitor, monitoring_active, current_monitoring_user
-    
-    if not window_monitor:
-        raise HTTPException(status_code=500, detail="Window monitor not initialized")
-    
-    if monitoring_active:
-        raise HTTPException(status_code=400, detail="Monitoring already active")
-    
-    if not WINDOWS_MONITORING_AVAILABLE:
-        raise HTTPException(status_code=400, detail="Windows monitoring not available on this platform")
-    
-    try:
-        # Start monitoring in a background task
-        monitoring_active = True
-        current_monitoring_user = username
-        
-        # Run monitoring in background
-        asyncio.create_task(window_monitor.start_monitoring(username, duration_minutes))
-        
-        return {
-            "status": "success",
-            "message": f"Monitoring started for {username}",
-            "duration_minutes": duration_minutes,
-            "monitoring_active": True
-        }
-        
-    except Exception as e:
-        monitoring_active = False
-        current_monitoring_user = None
-        raise HTTPException(status_code=500, detail=f"Failed to start monitoring: {e}")
-
-@app.post("/monitoring/stop")
-async def stop_monitoring():
-    """Stop integrated window monitoring"""
-    global window_monitor, monitoring_active, current_monitoring_user
-    
-    if not window_monitor:
-        raise HTTPException(status_code=500, detail="Window monitor not initialized")
-    
-    if not monitoring_active:
-        raise HTTPException(status_code=400, detail="No monitoring active")
-    
-    try:
-        window_monitor.stop_monitoring()
-        monitoring_active = False
-        current_monitoring_user = None
-        
-        return {
-            "status": "success",
-            "message": "Monitoring stopped",
-            "monitoring_active": False
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to stop monitoring: {e}")
-
-@app.get("/monitoring/status")
-async def get_monitoring_status():
-    """Get current monitoring status"""
-    global window_monitor, monitoring_active, current_monitoring_user
-    
+# NEW: Cross-platform window monitoring endpoints
+@app.get("/window-monitor/status")
+async def get_window_monitor_status():
+    """Get the status of the cross-platform window monitor"""
     if not window_monitor:
         return {
-            "monitoring_available": False,
-            "monitoring_active": False,
-            "message": "Window monitor not initialized"
+            "available": False,
+            "system": "Unknown",
+            "message": "Window monitoring not available"
         }
     
     return {
-        "monitoring_available": WINDOWS_MONITORING_AVAILABLE,
-        "monitoring_active": monitoring_active,
-        "current_user": current_monitoring_user,
-        "window_monitor_status": {
-            "is_monitoring": window_monitor.is_monitoring,
-            "current_session_id": window_monitor.current_session_id,
-            "last_window_title": window_monitor.last_window_title,
-            "check_interval": window_monitor.check_interval
-        }
+        "available": True,
+        "system": window_monitor.system,
+        "windows_available": WINDOWS_AVAILABLE,
+        "linux_available": LINUX_AVAILABLE,
+        "last_window_title": window_monitor.last_window_title,
+        "message": f"Window monitoring available for {window_monitor.system}"
     }
 
-@app.get("/monitoring/current-window")
+@app.get("/window-monitor/current-window")
 async def get_current_window():
     """Get the currently active window title"""
-    global window_monitor
-    
     if not window_monitor:
-        raise HTTPException(status_code=500, detail="Window monitor not initialized")
-    
-    if not WINDOWS_MONITORING_AVAILABLE:
-        raise HTTPException(status_code=400, detail="Windows monitoring not available on this platform")
+        raise HTTPException(status_code=503, detail="Window monitoring not available")
     
     try:
         window_title = window_monitor.get_active_window_title()
+        window_info = window_monitor.get_window_info()
+        
         return {
             "window_title": window_title,
-            "timestamp": datetime.now().isoformat()
+            "process_name": window_info["name"],
+            "process_exe": window_info["exe"],
+            "system": window_monitor.system,
+            "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get current window: {e}")
 
-# ============================================================================
-# SIMULTANEOUS MONITORING SETUP
-# ============================================================================
-
-@app.post("/monitoring/setup-simultaneous")
-async def setup_simultaneous_monitoring():
-    """Setup instructions for running monitoring scripts simultaneously with main.py"""
-    return {
-        "message": "To run monitoring simultaneously with main.py, use these commands:",
-        "instructions": [
-            "1. Start the main server: python main.py",
-            "2. In a separate terminal, run: python window_monitor.py",
-            "3. Or run: python activity_monitor.py for testing",
-            "",
-            "Alternative: Use the integrated monitoring endpoints:",
-            "- POST /monitoring/start/{username} - Start integrated monitoring",
-            "- POST /monitoring/stop - Stop monitoring",
-            "- GET /monitoring/status - Check monitoring status",
-            "- GET /monitoring/current-window - Get current window"
-        ],
-        "integrated_monitoring": {
-            "available": WINDOWS_MONITORING_AVAILABLE,
-            "endpoints": [
-                "/monitoring/start/{username}",
-                "/monitoring/stop", 
-                "/monitoring/status",
-                "/monitoring/current-window"
-            ]
+@app.post("/window-monitor/start-monitoring/{username}")
+async def start_window_monitoring(username: str, session_id: str):
+    """Start monitoring the current user's active windows"""
+    if not window_monitor:
+        raise HTTPException(status_code=503, detail="Window monitoring not available")
+    
+    # Validate session
+    if not ObjectId.is_valid(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    
+    session = await sessions_collection.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session["username"] != username:
+        raise HTTPException(status_code=403, detail="Session does not belong to user")
+    
+    try:
+        # Get current window and classify it
+        window_title = window_monitor.get_active_window_title()
+        window_info = window_monitor.get_window_info()
+        
+        # Classify the activity using AI
+        detailed_analysis = classifier.get_detailed_analysis(window_title)
+        
+        # Create activity log entry
+        activity_data = {
+            "user_id": session["user_id"],
+            "username": username,
+            "session_id": session_id,
+            "window_title": window_title,
+            "classification": detailed_analysis["classification"],
+            "confidence": detailed_analysis["confidence"],
+            "is_distraction": detailed_analysis["is_distraction"],
+            "sentiment": detailed_analysis["sentiment"],
+            "sentiment_score": detailed_analysis["sentiment_score"],
+            "reasoning": detailed_analysis["reasoning"],
+            "timestamp": datetime.utcnow(),
+            "created_at": datetime.utcnow()
         }
-    }
+        
+        result = await activity_collection.insert_one(activity_data)
+        activity_data["id"] = str(result.inserted_id)
+        
+        # Handle notifications if it's a distraction
+        if detailed_analysis["is_distraction"]:
+            await send_distraction_notification(username, window_title, session_id)
+        
+        return {
+            "message": "Window monitoring started",
+            "current_window": {
+                "title": window_title,
+                "process": window_info["name"],
+                "classification": detailed_analysis["classification"],
+                "is_distraction": detailed_analysis["is_distraction"],
+                "confidence": detailed_analysis["confidence"]
+            },
+            "session_id": session_id
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start monitoring: {e}")
+
+@app.post("/window-monitor/check-window/{username}")
+async def check_current_window(username: str, session_id: str):
+    """Check the current window and log activity if needed"""
+    if not window_monitor:
+        raise HTTPException(status_code=503, detail="Window monitoring not available")
+    
+    # Validate session
+    if not ObjectId.is_valid(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    
+    session = await sessions_collection.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session["username"] != username:
+        raise HTTPException(status_code=403, detail="Session does not belong to user")
+    
+    try:
+        # Get current window
+        current_title = window_monitor.get_active_window_title()
+        current_time = time.time()
+        
+        # Check if we should send activity data
+        should_send, reason = window_monitor.should_send_activity(current_title, current_time)
+        
+        if should_send:
+            # Classify the activity using AI
+            detailed_analysis = classifier.get_detailed_analysis(current_title)
+            
+            # Create activity log entry
+            activity_data = {
+                "user_id": session["user_id"],
+                "username": username,
+                "session_id": session_id,
+                "window_title": current_title,
+                "classification": detailed_analysis["classification"],
+                "confidence": detailed_analysis["confidence"],
+                "is_distraction": detailed_analysis["is_distraction"],
+                "sentiment": detailed_analysis["sentiment"],
+                "sentiment_score": detailed_analysis["sentiment_score"],
+                "reasoning": detailed_analysis["reasoning"],
+                "timestamp": datetime.utcnow(),
+                "created_at": datetime.utcnow()
+            }
+            
+            result = await activity_collection.insert_one(activity_data)
+            activity_data["id"] = str(result.inserted_id)
+            
+            # Handle notifications if it's a distraction
+            if detailed_analysis["is_distraction"]:
+                await send_distraction_notification(username, current_title, session_id)
+            
+            # Update tracking
+            window_monitor.last_window_title = current_title
+            window_monitor.last_check_time = current_time
+            
+            return {
+                "window_changed": True,
+                "reason": reason,
+                "current_window": {
+                    "title": current_title,
+                    "classification": detailed_analysis["classification"],
+                    "is_distraction": detailed_analysis["is_distraction"],
+                    "confidence": detailed_analysis["confidence"],
+                    "sentiment": detailed_analysis["sentiment"]
+                },
+                "activity_logged": True,
+                "notification_sent": detailed_analysis["is_distraction"]
+            }
+        else:
+            return {
+                "window_changed": False,
+                "reason": reason,
+                "current_window": {
+                    "title": current_title
+                },
+                "activity_logged": False,
+                "notification_sent": False
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to check window: {e}")
+
+@app.get("/window-monitor/system-info")
+async def get_system_info():
+    """Get system information for window monitoring"""
+    try:
+        system_info = {
+            "system": platform.system(),
+            "platform": platform.platform(),
+            "architecture": platform.architecture(),
+            "processor": platform.processor(),
+            "hostname": platform.node(),
+            "username": os.environ.get('USER', os.environ.get('USERNAME', 'Unknown')),
+            "display": os.environ.get('DISPLAY', 'No Display'),
+            "terminal": os.environ.get('TERM', 'Unknown'),
+            "python_version": platform.python_version(),
+            "window_monitoring_available": WINDOW_MONITORING_AVAILABLE,
+            "windows_available": WINDOWS_AVAILABLE,
+            "linux_available": LINUX_AVAILABLE
+        }
+        
+        # Check for Linux window manager tools
+        if system_info["system"] == "Linux":
+            try:
+                # Check for xdotool
+                result = subprocess.run(['which', 'xdotool'], capture_output=True, text=True)
+                system_info["xdotool_available"] = result.returncode == 0
+            except:
+                system_info["xdotool_available"] = False
+            
+            try:
+                # Check for wmctrl
+                result = subprocess.run(['which', 'wmctrl'], capture_output=True, text=True)
+                system_info["wmctrl_available"] = result.returncode == 0
+            except:
+                system_info["wmctrl_available"] = False
+        
+        return system_info
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get system info: {e}")
+
+
+
+
 
 if __name__ == "__main__":
     import uvicorn
