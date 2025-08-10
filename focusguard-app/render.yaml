@@ -35,8 +35,8 @@ services:
       pip install --no-cache-dir --only-binary=all numpy==1.26.4
       pip install --no-cache-dir --only-binary=all scikit-learn==1.4.0
       
-      # Install PyTorch CPU version
-      pip install torch==2.5.0+cpu torchvision==0.20.0+cpu torchaudio==2.5.0+cpu --index-url https://download.pytorch.org/whl/cpu
+      # Install PyTorch CPU version (let pip resolve compatible version)
+      pip install torch+cpu torchvision+cpu torchaudio+cpu --index-url https://download.pytorch.org/whl/cpu
       
       # Install sentence-transformers with pre-compiled wheels
       pip install --no-cache-dir --only-binary=all sentence-transformers==2.2.2
