@@ -9,6 +9,8 @@ import FocusTimer from './components/FocusTimer';
 import Statistics from './components/Statistics';
 import DailyPlan from './components/DailyPlan';
 import ParticleBackground from './components/ParticleBackground';
+import { Toaster } from './components/ui/sonner';
+import { toast } from 'sonner';
 
 // API configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -17,6 +19,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isLoading, setIsLoading] = useState(true);
+  const [isBackendAvailable, setIsBackendAvailable] = useState(true);
 
   // Check for stored user on app load
   useEffect(() => {
@@ -31,7 +34,27 @@ function App() {
       }
     }
     setIsLoading(false);
+    
+    // Check backend health on app start
+    checkBackendHealth();
   }, []);
+
+  const checkBackendHealth = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/`, { 
+        method: 'GET',
+        signal: AbortSignal.timeout(3000) // 3 second timeout
+      });
+      if (response.ok) {
+        setIsBackendAvailable(true);
+      } else {
+        setIsBackendAvailable(false);
+      }
+    } catch (error) {
+      console.log('Backend not available on app start:', error.message);
+      setIsBackendAvailable(false);
+    }
+  };
 
   const handleLogin = async (username) => {
     try {
@@ -47,13 +70,36 @@ function App() {
         const userData = await response.json();
         setCurrentUser(userData);
         localStorage.setItem('focusguard_user', JSON.stringify(userData));
-        return { success: true };
+        setIsBackendAvailable(true); // Backend is working if login succeeded
+        
+        // Handle username modification feedback
+        if (userData.username_modified) {
+          // Show notification about username change
+          toast.info(
+            `Username "${userData.original_username}" was already taken. Your username is now "${userData.username}"`,
+            {
+              duration: 5000,
+              action: {
+                label: 'OK',
+                onClick: () => console.log('Username change acknowledged')
+              }
+            }
+          );
+        } else if (userData.message) {
+          // Show welcome message
+          toast.success(userData.message, {
+            duration: 3000
+          });
+        }
+        
+        return { success: true, userData };
       } else {
         const error = await response.json();
         return { success: false, error: error.detail || 'Login failed' };
       }
     } catch (error) {
       console.error('Login error:', error);
+      setIsBackendAvailable(false);
       return { success: false, error: 'Network error. Please try again.' };
     }
   };
@@ -62,6 +108,8 @@ function App() {
     setCurrentUser(null);
     localStorage.removeItem('focusguard_user');
     setCurrentView('dashboard');
+    // Clear any stored notifications
+    localStorage.removeItem('notifications');
   };
 
   if (isLoading) {
@@ -100,6 +148,8 @@ function App() {
                   setCurrentView={setCurrentView}
                   onLogout={handleLogout}
                   apiBaseUrl={API_BASE_URL}
+                  isBackendAvailable={isBackendAvailable}
+                  onBackendStatusChange={setIsBackendAvailable}
                 />
               } 
             />
@@ -137,6 +187,7 @@ function App() {
           </Routes>
         </Router>
       </div>
+      <Toaster />
     </div>
   );
 }

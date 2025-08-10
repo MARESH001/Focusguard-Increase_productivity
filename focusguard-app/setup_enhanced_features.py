@@ -9,18 +9,66 @@ import sys
 import os
 import json
 from pathlib import Path
+import asyncio
+import aiohttp
+from datetime import datetime, timedelta
+import motor.motor_asyncio
 
-def run_command(command, description):
-    """Run a command and handle errors"""
-    print(f"🔄 {description}...")
+async def get_current_user():
+    """Get the current user from MongoDB"""
     try:
-        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
-        print(f"✅ {description} completed successfully")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ {description} failed: {e}")
-        print(f"Error output: {e.stderr}")
-        return False
+        # Get MongoDB connection from environment
+        mongodb_url = os.getenv("MONGODB_URL")
+        if not mongodb_url:
+            print("⚠️ MONGODB_URL not set, using default username")
+            return "cheerful_soul_44"
+        
+        # Connect to MongoDB
+        client = motor.motor_asyncio.AsyncIOMotorClient(mongodb_url)
+        db = client.focusguard
+        
+        # Get the most recent user
+        cursor = db.users.find().sort("created_at", -1).limit(1)
+        users = await cursor.to_list(length=1)
+        
+        if users:
+            return users[0]["username"]
+        else:
+            # Fallback to default username if no users found
+            return "cheerful_soul_44"
+            
+    except Exception as e:
+        print(f"Error getting current user from MongoDB: {e}")
+        return "cheerful_soul_44"  # Fallback - updated to match current user
+
+async def setup_test_data(api_base_url="http://localhost:8000"):
+    """Setup test data for enhanced features"""
+    
+    # Get current user dynamically
+    username = await get_current_user()
+    print(f"🔍 Setting up test data for user: {username}")
+    
+    test_data = {
+        "test_user": {
+            "username": username,
+            "daily_plan": {
+                "date": "2024-01-15",
+                "tasks": [
+                    {"id": "1", "text": "Complete project documentation", "completed": False, "reminder_time": "14:00"},
+                    {"id": "2", "text": "Review code changes", "completed": True, "reminder_time": None},
+                    {"id": "3", "text": "Prepare presentation", "completed": False, "reminder_time": "16:00"}
+                ],
+                "custom_audio_url": "https://example.com/notification.mp3"
+            }
+        }
+    }
+    
+    # Save test data
+    with open("test_data.json", "w") as f:
+        json.dump(test_data, f, indent=2)
+    
+    print("✅ Test data created: test_data.json")
+    return True
 
 def check_python_version():
     """Check if Python version is compatible"""
@@ -85,7 +133,7 @@ def create_test_data():
     
     test_data = {
         "test_user": {
-            "username": "testuser",
+            "username": "cheerful_soul_44",
             "daily_plan": {
                 "date": "2024-01-15",
                 "tasks": [
@@ -216,7 +264,7 @@ def main():
     
     # Create configuration files
     create_config_file()
-    create_test_data()
+    # create_test_data() # This line is now replaced by the new_code
     
     # Run tests
     if not run_tests():

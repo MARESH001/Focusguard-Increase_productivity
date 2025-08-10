@@ -8,54 +8,65 @@ import asyncio
 import aiohttp
 import json
 import time
-from datetime import datetime
 import random
+import os
+from datetime import datetime, timedelta
+import motor.motor_asyncio
 
-class ActivityMonitor:
-    def __init__(self, api_base_url="http://localhost:8000", username="testuser"):
+class ActivitySimulator:
+    def __init__(self, api_base_url="http://localhost:8000", username=None):
         self.api_base_url = api_base_url
         self.username = username
         self.session_id = None
-        self.is_monitoring = False
+        self.is_running = False
         
-        # Sample distracting activities for testing
-        self.distracting_activities = [
-            "YouTube - Funny Cat Videos",
-            "Facebook - Social Media",
-            "Instagram - Photo Sharing",
-            "Twitter - Social Media",
-            "Reddit - Entertainment",
-            "Netflix - Movie Streaming",
-            "Spotify - Music",
-            "TikTok - Short Videos",
-            "Discord - Gaming Chat",
-            "Twitch - Live Streaming"
-        ]
+    async def get_current_user(self):
+        """Get the current user from MongoDB"""
+        try:
+            # Get MongoDB connection from environment
+            mongodb_url = os.getenv("MONGODB_URL")
+            if not mongodb_url:
+                print("⚠️ MONGODB_URL not set, using default username")
+                return "cheerful_soul_44"
+            
+            # Connect to MongoDB
+            client = motor.motor_asyncio.AsyncIOMotorClient(mongodb_url)
+            db = client.focusguard
+            
+            # Get the most recent user
+            cursor = db.users.find().sort("created_at", -1).limit(1)
+            users = await cursor.to_list(length=1)
+            
+            if users:
+                return users[0]["username"]
+            else:
+                # Fallback to default username if no users found
+                return "cheerful_soul_44"
+                
+        except Exception as e:
+            print(f"Error getting current user from MongoDB: {e}")
+            return "cheerful_soul_44"  # Fallback - updated to match current user
+    
+    async def create_session(self):
+        """Create a new session for the current user"""
+        if not self.username:
+            self.username = await self.get_current_user()
+            print(f"🔍 Detected current user: {self.username}")
         
-        # Sample productive activities
-        self.productive_activities = [
-            "Visual Studio Code - focusguard-app/main.py",
-            "Google Chrome - Stack Overflow",
-            "Terminal - git commit",
-            "Notion - Project Planning",
-            "Slack - Work Communication",
-            "Microsoft Teams - Meeting",
-            "Zoom - Video Conference",
-            "Jira - Task Management",
-            "Confluence - Documentation",
-            "GitHub - Code Repository"
-        ]
-
-    async def create_focus_session(self):
-        """Create a focus session for monitoring"""
         try:
             async with aiohttp.ClientSession() as session:
-                session_data = {
-                    "task_description": "Testing activity monitoring",
-                    "keywords": ["test", "monitoring", "focus"],
-                    "duration_minutes": 30
-                }
+                # Create user if doesn't exist
+                user_data = {"username": self.username}
+                async with session.post(
+                    f"{self.api_base_url}/users/",
+                    json=user_data
+                ) as response:
+                    if response.status not in [200, 201]:
+                        print(f"❌ Failed to create user: {response.status}")
+                        return False
                 
+                # Create session
+                session_data = {"task_description": "Activity simulation session", "keywords": ["simulation"], "duration_minutes": 30}
                 async with session.post(
                     f"{self.api_base_url}/users/{self.username}/sessions/",
                     json=session_data
@@ -63,11 +74,12 @@ class ActivityMonitor:
                     if response.status == 200:
                         session_info = await response.json()
                         self.session_id = session_info["id"]
-                        print(f"✅ Created focus session: {self.session_id}")
+                        print(f"✅ Session created: {self.session_id}")
                         return True
                     else:
                         print(f"❌ Failed to create session: {response.status}")
                         return False
+                        
         except Exception as e:
             print(f"❌ Error creating session: {e}")
             return False
@@ -112,15 +124,15 @@ class ActivityMonitor:
         print("=" * 50)
         
         # Create a focus session
-        if not await self.create_focus_session():
+        if not await self.create_session():
             print("❌ Failed to create focus session. Exiting.")
             return
         
-        self.is_monitoring = True
+        self.is_running = True
         start_time = time.time()
         end_time = start_time + (duration_minutes * 60)
         
-        while self.is_monitoring and time.time() < end_time:
+        while self.is_running and time.time() < end_time:
             # Simulate checking activity every 2 seconds
             await asyncio.sleep(2)
             
@@ -141,7 +153,7 @@ class ActivityMonitor:
             if time.time() >= end_time:
                 break
         
-        self.is_monitoring = False
+        self.is_running = False
         print("=" * 50)
         print("🏁 Activity monitoring completed!")
 
@@ -185,12 +197,12 @@ async def main():
     print("🎯 FocusGuard Activity Monitor")
     print("=" * 30)
     
-    # Configuration
+        # Configuration
     api_url = "http://localhost:8000"
-    username = "testuser"
+    username = "cheerful_soul_44" # This will be overridden by get_current_user
     duration = 2  # minutes
     
-    monitor = ActivityMonitor(api_url, username)
+    monitor = ActivitySimulator(api_url, username)
     
     try:
         # Start activity monitoring

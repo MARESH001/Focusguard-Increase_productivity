@@ -60,34 +60,44 @@ const DailyPlan = ({ user, apiBaseUrl }) => {
   };
 
   const savePlan = async () => {
-    if (tasks.length === 0 && reminders.length === 0) return;
-    
     setSaving(true);
     try {
+      const planData = {
+        tasks: tasks,
+        reminders: reminders
+      };
+      
+      console.log('🔄 Saving plan data:', planData);
+      console.log('📊 Current tasks count:', tasks.length);
+      console.log('⏰ Current reminders count:', reminders.length);
+      
       const response = await fetch(`${apiBaseUrl}/users/${user.username}/plans/enhanced/${selectedDate}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          tasks: tasks,
-          reminders: reminders
-        }),
+        body: JSON.stringify(planData),
       });
 
       if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Plan saved successfully:', result);
         setIsEditing(false);
         // Reload to get updated data
         await loadPlan(selectedDate);
+      } else {
+        console.error('❌ Failed to save plan:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Error details:', errorText);
       }
     } catch (error) {
-      console.error('Error saving plan:', error);
+      console.error('❌ Error saving plan:', error);
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleTaskCompletion = (taskId) => {
+  const toggleTaskCompletion = async (taskId) => {
     setTasks(prevTasks => 
       prevTasks.map(task => 
         task.id === taskId 
@@ -95,10 +105,15 @@ const DailyPlan = ({ user, apiBaseUrl }) => {
           : task
       )
     );
+    // Auto-save after toggling task completion
+    await savePlan();
   };
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTaskText.trim()) return;
+    
+    console.log('➕ Adding new task:', newTaskText.trim());
+    console.log('📋 Current tasks before adding:', tasks);
     
     const newTask = {
       id: Date.now().toString(),
@@ -106,16 +121,36 @@ const DailyPlan = ({ user, apiBaseUrl }) => {
       completed: false
     };
     
-    setTasks(prev => [...prev, newTask]);
+    console.log('📝 New task object:', newTask);
+    
+    const updatedTasks = [...tasks, newTask];
+    console.log('📋 Tasks after adding:', updatedTasks);
+    
+    setTasks(updatedTasks);
     setNewTaskText('');
+    
+    // Save with the updated tasks array
+    await savePlanWithData(updatedTasks, reminders);
   };
 
-  const removeTask = (taskId) => {
-    setTasks(prev => prev.filter(task => task.id !== taskId));
+  const removeTask = async (taskId) => {
+    console.log('🗑️ Removing task with ID:', taskId);
+    console.log('📋 Tasks before removal:', tasks);
+    
+    const updatedTasks = tasks.filter(task => task.id !== taskId);
+    console.log('📋 Tasks after removal:', updatedTasks);
+    
+    setTasks(updatedTasks);
+    
+    // Save with the updated tasks array
+    await savePlanWithData(updatedTasks, reminders);
   };
 
-  const addReminder = () => {
+  const addReminder = async () => {
     if (!newReminderText.trim() || !newReminderTime) return;
+    
+    console.log('➕ Adding new reminder:', newReminderText.trim(), 'at', newReminderTime);
+    console.log('⏰ Current reminders before adding:', reminders);
     
     const newReminder = {
       id: Date.now().toString(),
@@ -124,16 +159,33 @@ const DailyPlan = ({ user, apiBaseUrl }) => {
       completed: false
     };
     
-    setReminders(prev => [...prev, newReminder]);
+    console.log('📝 New reminder object:', newReminder);
+    
+    const updatedReminders = [...reminders, newReminder];
+    console.log('⏰ Reminders after adding:', updatedReminders);
+    
+    setReminders(updatedReminders);
     setNewReminderText('');
     setNewReminderTime('');
+    
+    // Save with the updated reminders array
+    await savePlanWithData(tasks, updatedReminders);
   };
 
-  const removeReminder = (reminderId) => {
-    setReminders(prev => prev.filter(reminder => reminder.id !== reminderId));
+  const removeReminder = async (reminderId) => {
+    console.log('🗑️ Removing reminder with ID:', reminderId);
+    console.log('⏰ Reminders before removal:', reminders);
+    
+    const updatedReminders = reminders.filter(reminder => reminder.id !== reminderId);
+    console.log('⏰ Reminders after removal:', updatedReminders);
+    
+    setReminders(updatedReminders);
+    
+    // Save with the updated reminders array
+    await savePlanWithData(tasks, updatedReminders);
   };
 
-  const toggleReminderCompletion = (reminderId) => {
+  const toggleReminderCompletion = async (reminderId) => {
     setReminders(prevReminders => 
       prevReminders.map(reminder => 
         reminder.id === reminderId 
@@ -141,6 +193,46 @@ const DailyPlan = ({ user, apiBaseUrl }) => {
           : reminder
       )
     );
+    // Auto-save after toggling reminder completion
+    await savePlan();
+  };
+
+  const savePlanWithData = async (tasksToSave, remindersToSave) => {
+    setSaving(true);
+    try {
+      const planData = {
+        tasks: tasksToSave,
+        reminders: remindersToSave
+      };
+      
+      console.log('🔄 Saving plan data:', planData);
+      console.log('📊 Tasks to save count:', tasksToSave.length);
+      console.log('⏰ Reminders to save count:', remindersToSave.length);
+      
+      const response = await fetch(`${apiBaseUrl}/users/${user.username}/plans/enhanced/${selectedDate}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(planData),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Plan saved successfully:', result);
+        setIsEditing(false);
+        // Reload to get updated data
+        await loadPlan(selectedDate);
+      } else {
+        console.error('❌ Failed to save plan:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Error details:', errorText);
+      }
+    } catch (error) {
+      console.error('❌ Error saving plan:', error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const getDateOptions = () => {

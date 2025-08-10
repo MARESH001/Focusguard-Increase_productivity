@@ -29,29 +29,16 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
   const [currentSession, setCurrentSession] = useState(null);
   const [distractionCount, setDistractionCount] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [simulatedWindowTitle, setSimulatedWindowTitle] = useState("Working on FocusGuard");
   const [keywords, setKeywords] = useState("");
   const [duration, setDuration] = useState(25);
   const [taskDescription, setTaskDescription] = useState("");
   const [customSound, setCustomSound] = useState(null);
   const [notificationPermission, setNotificationPermission] = useState("default");
 
-  const simulatedWindows = [
-    "Visual Studio Code - focusguard-frontend",
-    "Google Chrome - React Documentation",
-    "Stack Overflow - JavaScript questions",
-    "Spotify - Lo-fi Beats",
-    "Notion - Project Planning",
-    "Gmail - Inbox",
-    "YouTube - Educational Video",
-    "Twitter - News Feed",
-    "Figma - UI Design",
-    "Slack - Team Chat"
-  ];
-
   const intervalRef = useRef(null);
   const activityLogIntervalRef = useRef(null);
   const audioRef = useRef(null);
+  const distractionCountIntervalRef = useRef(null);
 
   useEffect(() => {
     // Initialize audio for notifications
@@ -64,8 +51,43 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      if (distractionCountIntervalRef.current) {
+        clearInterval(distractionCountIntervalRef.current);
+      }
     };
   }, []);
+
+  // Fetch real-time distraction count when session is active
+  useEffect(() => {
+    if (currentSession && isRunning) {
+      // Fetch initial distraction count
+      fetchDistractionCount();
+      
+      // Set up interval to fetch distraction count every 5 seconds
+      distractionCountIntervalRef.current = setInterval(() => {
+        fetchDistractionCount();
+      }, 5000);
+      
+      return () => {
+        if (distractionCountIntervalRef.current) {
+          clearInterval(distractionCountIntervalRef.current);
+        }
+      };
+    }
+  }, [currentSession, isRunning]);
+
+  const fetchDistractionCount = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/users/${user.username}/distraction-status`);
+      if (response.ok) {
+        const data = await response.json();
+        setDistractionCount(data.current_distraction_count || 0);
+        console.log('📊 Updated distraction count:', data.current_distraction_count);
+      }
+    } catch (error) {
+      console.error('Error fetching distraction count:', error);
+    }
+  };
 
   useEffect(() => {
     if (isRunning && !isPaused && timeLeft > 0) {
@@ -154,38 +176,15 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
   };
 
   const startMonitoring = (sessionId) => {
-    // Simulate sending activity logs to the backend every 5 seconds
-    activityLogIntervalRef.current = setInterval(async () => {
-      const randomWindow = simulatedWindows[Math.floor(Math.random() * simulatedWindows.length)];
-      const isDistraction = randomWindow.includes("Spotify") || randomWindow.includes("YouTube") || randomWindow.includes("Twitter");
-      
-      try {
-        await fetch(`${apiBaseUrl}/sessions/${sessionId}/activity/enhanced`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            window_title: randomWindow,
-            classification: isDistraction ? "entertainment" : "productive", // Simplified classification for simulation
-            confidence: 0.9,
-            is_distraction: isDistraction,
-            start_time: new Date().toISOString(),
-            duration_seconds: 5 // Assuming each log represents 5 seconds of activity
-          }),
-        });
-        setSimulatedWindowTitle(randomWindow);
-      } catch (error) {
-        console.error("Error logging simulated activity:", error);
-      }
-
-      // Simulate distraction notification based on activity
-      if (isDistraction) {
-        handleDistraction(sessionId);
-      }
-
-    }, 5000); // Send activity every 5 seconds
+    // Real window monitoring is handled by the backend window_monitor.py
+    // This function only starts the timer, not window monitoring
+    console.log("Timer started - real window monitoring handled by backend");
+    
+    // Clear any existing monitoring
+    if (activityLogIntervalRef.current) {
+      clearInterval(activityLogIntervalRef.current);
+      activityLogIntervalRef.current = null;
+    }
   };
 
   // NOTE: Ensure your monitoring logic always calls handleDistraction(currentSession.id) for every distraction event, not just the first one.
@@ -213,24 +212,9 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
       "You seem to be getting distracted. Stay focused on your task!"
     );
 
-    // Log the distraction
-    try {
-      await fetch(`${apiBaseUrl}/sessions/${sessionId}/activity/enhanced`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          session_id: sessionId,
-          window_title: 'Simulated Distraction',
-          classification: 'entertainment',
-          confidence: 0.8,
-          is_distraction: true
-        }),
-      });
-    } catch (error) {
-      console.error('Error logging distraction:', error);
-    }
+    // Note: Real window monitoring is handled by the backend window_monitor.py
+    // This function only handles the timer-based distraction count
+    console.log("Distraction detected - real window monitoring handled by backend");
   };
 
   const playNotificationSound = () => {
@@ -602,8 +586,20 @@ const FocusTimer = ({ user, apiBaseUrl }) => {
             <CardContent className="pt-6">
               <div className="text-center">
                 <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-yellow-400" />
-                <div className="text-2xl font-bold">{distractionCount}</div>
-                <div className="text-sm text-muted-foreground">Distractions</div>
+                <div className="text-2xl font-bold flex items-center justify-center gap-2">
+                  {distractionCount}
+                  {isRunning && (
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="Live updates active"></div>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Distractions {isRunning && "(Live)"}
+                </div>
+                {isRunning && (
+                  <div className="text-xs text-green-600 mt-1">
+                    📊 Real-time monitoring
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
