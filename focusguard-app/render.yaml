@@ -29,10 +29,11 @@ services:
       export RUSTUP_HOME="/tmp/rustup"
       
       # Install PyTorch CPU version (more compatible with Render)
-      pip install torch==2.5.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+      pip install torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
       
-      # Install pydantic v1 (no Rust compilation needed)
-      pip install --no-cache-dir pydantic==1.10.13
+      # Install packages with pre-compiled wheels (no Rust compilation)
+      pip install --no-cache-dir --only-binary=all pydantic==1.10.13
+      pip install --no-cache-dir --only-binary=all tokenizers==0.13.3
       
       # Install other requirements
       pip install --no-cache-dir --prefer-binary -r requirements.txt
