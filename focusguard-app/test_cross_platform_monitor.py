@@ -1,160 +1,120 @@
 #!/usr/bin/env python3
 """
-Test script for Cross-Platform Window Monitor
-This script tests the window monitoring capabilities on the current system.
+Test script for cross-platform window monitoring functionality.
+This script tests the CrossPlatformWindowMonitor class to ensure it works
+correctly on both Windows and Linux systems.
 """
 
 import asyncio
 import platform
-import subprocess
-import os
-from cross_platform_monitor import CrossPlatformMonitor
+import sys
+import time
+from datetime import datetime
 
-async def test_window_monitoring():
-    """Test the cross-platform window monitoring system"""
-    print("🧪 Testing Cross-Platform Window Monitor")
+# Add the current directory to Python path to import from main.py
+sys.path.append('.')
+
+try:
+    from main import CrossPlatformWindowMonitor
+    print("✅ Successfully imported CrossPlatformWindowMonitor from main.py")
+except ImportError as e:
+    print(f"❌ Failed to import CrossPlatformWindowMonitor: {e}")
+    sys.exit(1)
+
+def test_window_monitor():
+    """Test the CrossPlatformWindowMonitor functionality"""
+    print(f"\n🔍 Testing Cross-Platform Window Monitor")
+    print(f"🌐 Platform: {platform.system()}")
+    print(f"🏗️ Architecture: {platform.machine()}")
+    print(f"🐍 Python Version: {platform.python_version()}")
+    
+    # Initialize the monitor
+    try:
+        monitor = CrossPlatformWindowMonitor()
+        print("✅ CrossPlatformWindowMonitor initialized successfully")
+    except Exception as e:
+        print(f"❌ Failed to initialize CrossPlatformWindowMonitor: {e}")
+        return False
+    
+    # Test getting current window
+    print("\n📱 Testing current window detection...")
+    try:
+        window_info = monitor.get_window_info()
+        print(f"✅ Current window: {window_info['title']}")
+        print(f"📊 Process: {window_info['process']}")
+        print(f"🆔 PID: {window_info['pid']}")
+        print(f"🔧 Platform: {window_info['platform']}")
+    except Exception as e:
+        print(f"❌ Failed to get current window: {e}")
+        return False
+    
+    # Test multiple window checks
+    print("\n🔄 Testing multiple window checks...")
+    for i in range(3):
+        try:
+            window_info = monitor.get_window_info()
+            print(f"Check {i+1}: {window_info['title'][:50]}...")
+            time.sleep(1)
+        except Exception as e:
+            print(f"❌ Failed on check {i+1}: {e}")
+            return False
+    
+    # Test should_send_activity logic
+    print("\n⏰ Testing activity sending logic...")
+    try:
+        current_time = datetime.now()
+        should_send = monitor.should_send_activity("Test Window", current_time)
+        print(f"✅ Should send activity: {should_send}")
+    except Exception as e:
+        print(f"❌ Failed to test activity logic: {e}")
+        return False
+    
+    print("\n🎉 All tests passed! Cross-platform window monitoring is working correctly.")
+    return True
+
+def test_system_info():
+    """Test system information gathering"""
+    print(f"\n💻 System Information:")
+    print(f"OS: {platform.system()}")
+    print(f"Release: {platform.release()}")
+    print(f"Version: {platform.version()}")
+    print(f"Machine: {platform.machine()}")
+    print(f"Processor: {platform.processor()}")
+    
+    # Test Linux-specific tools if on Linux
+    if platform.system() == "Linux":
+        print("\n🐧 Linux-specific tools:")
+        import subprocess
+        
+        tools = ['xdotool', 'wmctrl']
+        for tool in tools:
+            try:
+                result = subprocess.run([tool, '--version'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    print(f"✅ {tool}: Available")
+                else:
+                    print(f"⚠️ {tool}: Not available")
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                print(f"❌ {tool}: Not found")
+
+async def main():
+    """Main test function"""
+    print("🚀 Starting Cross-Platform Window Monitor Tests")
     print("=" * 50)
     
-    # Create monitor instance
-    monitor = CrossPlatformMonitor()
+    # Test system info
+    test_system_info()
     
-    print(f"🖥️  System: {monitor.system}")
-    print(f"📋 Platform: {platform.platform()}")
-    print(f"🐍 Python: {platform.python_version()}")
+    # Test window monitor
+    success = test_window_monitor()
     
-    # Test window detection
-    print("\n🔍 Testing window detection...")
-    try:
-        current_window = monitor.get_active_window_title()
-        print(f"✅ Current window: {current_window}")
-        
-        # Test window info
-        window_info = monitor.get_window_info()
-        print(f"📊 Window info: {window_info}")
-        
-    except Exception as e:
-        print(f"❌ Window detection failed: {e}")
-    
-    # Test system capabilities
-    print("\n🔧 Testing system capabilities...")
-    if monitor.system == "Windows":
-        print(f"Windows monitoring: {'✅ Available' if monitor.windows_available else '❌ Not available'}")
-    elif monitor.system == "Linux":
-        print(f"Linux monitoring: {'✅ Available' if monitor.linux_available else '❌ Not available'}")
-        print(f"xdotool: {'✅ Available' if monitor.xdotool_available else '❌ Not available'}")
-        print(f"wmctrl: {'✅ Available' if monitor.wmctrl_available else '❌ Not available'}")
-    
-    # Test API connectivity (if backend is running)
-    print("\n🌐 Testing API connectivity...")
-    try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:8000/") as response:
-                if response.status == 200:
-                    print("✅ Backend API is running")
-                    
-                    # Test window monitor status endpoint
-                    async with session.get("http://localhost:8000/window-monitor/status") as status_response:
-                        if status_response.status == 200:
-                            status_data = await status_response.json()
-                            print(f"✅ Window monitor status: {status_data}")
-                        else:
-                            print(f"⚠️ Window monitor status endpoint returned: {status_response.status}")
-                else:
-                    print(f"⚠️ Backend API returned: {response.status}")
-    except Exception as e:
-        print(f"❌ Backend API test failed: {e}")
-        print("💡 Make sure the FocusGuard backend is running on http://localhost:8000")
-    
-    print("\n" + "=" * 50)
-    print("🏁 Cross-platform window monitor test completed!")
-
-def test_linux_tools():
-    """Test Linux window manager tools availability"""
-    if platform.system() != "Linux":
-        print("⚠️ This test is only for Linux systems")
-        return
-    
-    print("🔧 Testing Linux window manager tools...")
-    
-    # Test xdotool
-    try:
-        result = subprocess.run(['which', 'xdotool'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print("✅ xdotool found")
-            # Test xdotool functionality
-            try:
-                result = subprocess.run(['xdotool', 'getactivewindow', 'getwindowname'], 
-                                      capture_output=True, text=True, timeout=2)
-                if result.returncode == 0:
-                    print(f"✅ xdotool working: {result.stdout.strip()}")
-                else:
-                    print(f"⚠️ xdotool command failed: {result.stderr.strip()}")
-            except subprocess.TimeoutExpired:
-                print("⚠️ xdotool command timed out")
-        else:
-            print("❌ xdotool not found")
-    except Exception as e:
-        print(f"❌ xdotool test failed: {e}")
-    
-    # Test wmctrl
-    try:
-        result = subprocess.run(['which', 'wmctrl'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print("✅ wmctrl found")
-            # Test wmctrl functionality
-            try:
-                result = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True, timeout=2)
-                if result.returncode == 0:
-                    print("✅ wmctrl working")
-                else:
-                    print(f"⚠️ wmctrl command failed: {result.stderr.strip()}")
-            except subprocess.TimeoutExpired:
-                print("⚠️ wmctrl command timed out")
-        else:
-            print("❌ wmctrl not found")
-    except Exception as e:
-        print(f"❌ wmctrl test failed: {e}")
-
-def test_windows_tools():
-    """Test Windows window monitoring tools availability"""
-    if platform.system() != "Windows":
-        print("⚠️ This test is only for Windows systems")
-        return
-    
-    print("🔧 Testing Windows window monitoring tools...")
-    
-    try:
-        import win32gui
-        import win32process
-        print("✅ pywin32 libraries available")
-        
-        # Test basic functionality
-        try:
-            hwnd = win32gui.GetForegroundWindow()
-            if hwnd:
-                title = win32gui.GetWindowText(hwnd)
-                print(f"✅ Windows window detection working: {title}")
-            else:
-                print("⚠️ No active window found")
-        except Exception as e:
-            print(f"❌ Windows window detection failed: {e}")
-            
-    except ImportError:
-        print("❌ pywin32 not installed")
-        print("💡 Install with: pip install pywin32")
+    if success:
+        print("\n✅ All tests completed successfully!")
+        print("🎯 Cross-platform window monitoring is ready for deployment.")
+    else:
+        print("\n❌ Some tests failed. Please check the errors above.")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    print("🎯 FocusGuard Cross-Platform Window Monitor Test")
-    print("=" * 60)
-    
-    # Test platform-specific tools
-    if platform.system() == "Linux":
-        test_linux_tools()
-    elif platform.system() == "Windows":
-        test_windows_tools()
-    
-    print("\n" + "=" * 60)
-    
-    # Run async tests
-    asyncio.run(test_window_monitoring())
+    asyncio.run(main())

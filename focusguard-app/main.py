@@ -1090,8 +1090,8 @@ async def send_distraction_notification(username: str, window_title: str, sessio
 async def check_and_send_reminders():
     """Check for due reminders and send notifications"""
     try:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        current_time = datetime.utcnow().strftime("%H:%M")
+        today = datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+        current_time = datetime.now(datetime.UTC).strftime("%H:%M")
         
         print(f"🔍 Checking reminders for {today} at {current_time}")
         
@@ -1279,7 +1279,12 @@ async def cleanup_session_audio(username: str):
 
 @app.get("/")
 async def root():
-    return {"message": "FocusGuard API is running!"}
+    return {"message": "FocusGuard API is running!", "status": "healthy", "timestamp": datetime.now(datetime.UTC).isoformat()}
+
+@app.get("/health")
+async def health_check():
+    """Fast health check endpoint for Render"""
+    return {"status": "healthy", "timestamp": datetime.now(datetime.UTC).isoformat()}
 
 @app.post("/users/", response_model=UserResponse)
 async def create_or_get_user(user: UserCreate):

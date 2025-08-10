@@ -11,5 +11,7 @@ psutil==5.9.6
 numpy==1.26.4
 scikit-learn==1.4.0
 torch>=1.6.0
+huggingface-hub==0.16.4
+transformers==4.21.3
 sentence-transformers==2.2.2
 python-dotenv==1.0.0

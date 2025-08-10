@@ -45,8 +45,12 @@ services:
       # Install PyTorch CPU version (let pip resolve compatible version)
       pip install torch+cpu torchvision+cpu torchaudio+cpu --index-url https://download.pytorch.org/whl/cpu
       
-      # Install sentence-transformers with pre-compiled wheels
-      pip install --no-cache-dir --only-binary=all sentence-transformers==2.2.2
+             # Install huggingface-hub and transformers with compatible versions
+       pip install --no-cache-dir huggingface-hub==0.16.4
+       pip install --no-cache-dir transformers==4.21.3
+       
+       # Install sentence-transformers with pre-compiled wheels
+       pip install --no-cache-dir --only-binary=all sentence-transformers==2.2.2
       
       # Install other requirements (Linux-specific)
       pip install --no-cache-dir --prefer-binary -r requirements-linux.txt
@@ -71,7 +75,7 @@ services:
         value: "true"
       - key: PYTHONPATH
         value: "/opt/render/project/src"
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: true
     buildFilter:
       paths:
