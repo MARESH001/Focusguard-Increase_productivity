@@ -9,4 +9,5 @@ textblob==0.17.1
 aiohttp==3.9.1
 psutil==5.9.6
 numpy==1.26.4
+scikit-learn==1.4.0
 python-dotenv==1.0.0
