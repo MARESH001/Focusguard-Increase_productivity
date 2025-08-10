@@ -31,6 +31,9 @@ services:
       # Install PyTorch CPU version (more compatible with Render)
       pip install torch==2.5.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
       
+      # Install pydantic v1 (no Rust compilation needed)
+      pip install --no-cache-dir pydantic==1.10.13
+      
       # Install other requirements
       pip install --no-cache-dir --prefer-binary -r requirements.txt
       
