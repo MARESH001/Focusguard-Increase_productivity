@@ -31,6 +31,9 @@ services:
       # Install pydantic v1 (no Rust compilation needed)
       pip install --no-cache-dir pydantic==1.10.13
       
+      # Install numpy with pre-compiled wheels
+      pip install --no-cache-dir --only-binary=all numpy==1.26.4
+      
       # Install other requirements
       pip install --no-cache-dir --prefer-binary -r requirements.txt
       
