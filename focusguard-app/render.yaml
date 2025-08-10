@@ -39,7 +39,7 @@ services:
       pip install torch==2.5.0+cpu torchvision==0.20.0+cpu torchaudio==2.5.0+cpu --index-url https://download.pytorch.org/whl/cpu
       
       # Install transformers with pre-compiled wheels
-      pip install --no-cache-dir --only-binary=all transformers==4.35.0
+      pip install --no-cache-dir --only-binary=all transformers==4.30.0
       
       # Install other requirements
       pip install --no-cache-dir --prefer-binary -r requirements.txt
