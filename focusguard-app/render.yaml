@@ -16,7 +16,7 @@ services:
         wget
       
       # Upgrade pip and build tools
-      pip install --upgrade pip setuptools wheel
+      pip install --upgrade pip setuptools wheel build
       
       # Set environment variables for optimized builds
       export BLIS_ARCH="x86_64"
@@ -44,7 +44,7 @@ services:
       - key: MONGODB_URL
         sync: false
       - key: PYTHON_VERSION
-        value: "3.11.9"
+        value: "3.13.4"
       - key: PORT
         value: "8000"
       - key: TRANSFORMERS_CACHE
