@@ -19,10 +19,6 @@ import shutil
 import platform
 import subprocess
 import psutil
-import win32gui
-import win32process
-import win32api
-import win32con
 import time
 
 # Advanced BERT-based Content Classification
@@ -44,21 +40,28 @@ try:
     import subprocess
     import psutil
     
-    # Windows-specific imports
+    # Windows-specific imports (only on Windows)
     if platform.system() == "Windows":
-        import win32gui
-        import win32process
-        import win32api
-        import win32con
-        WINDOWS_AVAILABLE = True
+        try:
+            import win32gui
+            import win32process
+            import win32api
+            import win32con
+            WINDOWS_AVAILABLE = True
+            print("✅ Windows window monitoring libraries available")
+        except ImportError:
+            WINDOWS_AVAILABLE = False
+            print("⚠️ Windows window monitoring not available (pywin32 not installed)")
     else:
         WINDOWS_AVAILABLE = False
+        print("ℹ️ Not on Windows - Windows window monitoring disabled")
     
     # Linux-specific imports
     if platform.system() == "Linux":
         import os
         import re
         LINUX_AVAILABLE = True
+        print("✅ Linux window monitoring available")
     else:
         LINUX_AVAILABLE = False
         
@@ -67,6 +70,8 @@ try:
 except ImportError as e:
     print(f"⚠️ Window monitoring not available: {e}")
     WINDOW_MONITORING_AVAILABLE = False
+    WINDOWS_AVAILABLE = False
+    LINUX_AVAILABLE = False
 
 # Load environment variables
 load_dotenv()

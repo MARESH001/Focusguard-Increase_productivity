@@ -1,0 +1,15 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+motor==3.3.2
+pymongo==4.6.0
+python-multipart==0.0.6
+websockets==12.0
+apscheduler==3.10.4
+textblob==0.17.1
+aiohttp==3.9.1
+psutil==5.9.6
+numpy==1.26.4
+scikit-learn==1.4.0
+torch>=1.6.0
+sentence-transformers==2.2.2
+python-dotenv==1.0.0

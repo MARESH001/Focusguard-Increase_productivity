@@ -31,6 +31,10 @@ services:
       export CARGO_HOME="/tmp/cargo"
       export RUSTUP_HOME="/tmp/rustup"
       
+      # Set environment to prevent Windows-specific packages
+      export PYTHONPATH="/opt/render/project/src"
+      export PLATFORM="linux"
+      
       # Install pydantic v1 (no Rust compilation needed)
       pip install --no-cache-dir pydantic==1.10.13
       
@@ -44,8 +48,8 @@ services:
       # Install sentence-transformers with pre-compiled wheels
       pip install --no-cache-dir --only-binary=all sentence-transformers==2.2.2
       
-      # Install other requirements
-      pip install --no-cache-dir --prefer-binary -r requirements.txt
+      # Install other requirements (Linux-specific)
+      pip install --no-cache-dir --prefer-binary -r requirements-linux.txt
       
       # Basic setup complete
       echo "✅ Basic dependencies installed successfully"
