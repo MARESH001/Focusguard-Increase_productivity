@@ -35,6 +35,9 @@ services:
       pip install --no-cache-dir --only-binary=all numpy==1.26.4
       pip install --no-cache-dir --only-binary=all scikit-learn==1.4.0
       
+      # Install PyTorch CPU version
+      pip install torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
+      
       # Install other requirements
       pip install --no-cache-dir --prefer-binary -r requirements.txt
       

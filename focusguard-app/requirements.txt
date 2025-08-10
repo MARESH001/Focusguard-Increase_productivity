@@ -10,4 +10,5 @@ aiohttp==3.9.1
 psutil==5.9.6
 numpy==1.26.4
 scikit-learn==1.4.0
+torch==2.0.1
 python-dotenv==1.0.0
