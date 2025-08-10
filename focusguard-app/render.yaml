@@ -28,25 +28,14 @@ services:
       export CARGO_HOME="/tmp/cargo"
       export RUSTUP_HOME="/tmp/rustup"
       
-      # Install PyTorch CPU version (more compatible with Render)
-      pip install torch==2.0.1+cpu torchvision==0.15.2+cpu torchaudio==2.0.2+cpu --index-url https://download.pytorch.org/whl/cpu
-      
-      # Install packages with pre-compiled wheels (no Rust compilation)
-      pip install --no-cache-dir --only-binary=all pydantic==1.10.13
-      pip install --no-cache-dir --only-binary=all tokenizers==0.13.3
+      # Install pydantic v1 (no Rust compilation needed)
+      pip install --no-cache-dir pydantic==1.10.13
       
       # Install other requirements
       pip install --no-cache-dir --prefer-binary -r requirements.txt
       
-      # Download BERT models during build (optional, will download on first run if not done here)
-      python -c "
-      try:
-          from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-          from sentence_transformers import SentenceTransformer
-          print('✅ BERT models will be downloaded on first run')
-      except Exception as e:
-          print(f'⚠️ BERT setup: {e}')
-      "
+      # Basic setup complete
+      echo "✅ Basic dependencies installed successfully"
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:
       - key: MONGODB_URL
